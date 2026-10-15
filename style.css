@@ -64,3 +64,10 @@ button:focus-visible,input:focus-visible,textarea:focus-visible{outline:4px soli
 button.slot{width:100%;color:#fff;font-size:15px}
 .fb .in{margin:auto;display:flex;flex-direction:column;align-items:center;text-align:center;max-width:640px;width:100%}
 .fb .ca s{opacity:.7}.ca .ln{margin-bottom:10px}
+
+.err{color:#ffd23f;font-size:14px;min-height:18px;margin:0 0 8px}
+.card .err{color:#e21b3c}
+.lbrow{display:grid;grid-template-columns:34px 1fr auto auto;gap:8px;align-items:center;padding:9px 6px;border-bottom:1px solid #eee;font-size:14px;text-align:left}
+.lbrow.me{background:#fff4cf;font-weight:900}.lbrow .sc{font-weight:900;color:#46178f}
+.lbrow .tm{color:#666;font-size:12px;min-width:74px;text-align:right}
+.pod div small{font-weight:700;opacity:.8}

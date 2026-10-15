@@ -54,27 +54,70 @@ function how() {
     <li><b>Drop-down gaps:</b> pick an answer in every gap, then press <b>Check my answer</b>.</li>
     <li><b>Matching:</b> tap a term, then tap the definition you think fits. Each term gets its own colour. You can change your mind, then press <b>Check</b>.</li>
     <li><b>Ordering:</b> tap the steps in order. Tap a placed step to take it back.</li>
-    <li><b>Written:</b> type your answer, compare with the model answer, score yourself.</li>
-    <li>Wrong answers are fine: you always see the correct answer so you can learn from it. Keep a streak for bonus points!</li></ol>
+    <li><b>Written:</b> write a full sentence. The game checks your key ideas and forgives spelling mistakes.</li>
+    <li>After every question you see the top 3 on the class leaderboard (score first, then fastest time).</li><li>Wrong answers are fine: you always see the correct answer so you can learn from it. Keep a streak for bonus points!</li></ol>
     <button class="go" id="x">Got it</button></div>`;
   document.body.appendChild(m);
   m.querySelector("#x").onclick = () => m.remove();
 }
 
+const getSaved = () => { try { return JSON.parse(localStorage.getItem("lc_player") || "{}"); } catch (e) { return {}; } };
+const fmtTime = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const MEDAL = ["🥇", "🥈", "🥉"];
+const modeNote = () => !window.CONFIG.API_URL
+  ? "Practice mode: scores are saved on this device only."
+  : LB.offline ? "Offline: could not reach the class leaderboard." : "Live class leaderboard connected.";
+const rec = done => ({ pin: st.pin, id: st.id, name: st.n, score: st.sc, correct: st.ok, answered: st.res.length,
+  time: Math.round(st.time * 10) / 10, done: !!done, attempt: st.att });
+let bt; // leaderboard polling handle
+
+function rowsHTML(list, max, me) {
+  if (!list.length) return "<p>No players yet. Be the first!</p>";
+  return list.slice(0, max).map((r, i) =>
+    `<div class="lbrow${r.id === me ? " me" : ""}"><span>${MEDAL[i] || i + 1}</span><span>${esc(r.name)}</span>` +
+    `<span class="sc">${r.score}</span><span class="tm">${fmtTime(r.time)}${r.done ? "" : " · Q" + r.answered}</span></div>`).join("");
+}
+
 function home() {
-  clearInterval(tm);
+  clearInterval(tm); clearInterval(bt);
+  const sv = getSaved();
   app.innerHTML = `<div class="c"><h1 class="logo">Learning Content</h1>
     <p class="sub">Unit 204 · Digital Transformation in Inspection Technologies</p>
-    <div class="card"><div class="pin" style="font-size:20px">Game PIN: 204 024</div>
-    <input id="nm" maxlength="16" placeholder="Nickname" aria-label="Nickname">
-    <button class="go" id="en">Enter</button></div>
-    <button class="lnk" id="hw">How to play?</button>
-    <p class="sub" style="margin-top:18px">${QUESTIONS.length} questions · answer fast for more points</p></div>`;
+    <div class="card"><input id="pin" placeholder="Game PIN (from your instructor)" value="${esc(sv.pin || "")}" autocomplete="off" aria-label="Game PIN">
+    <input id="nm" maxlength="40" placeholder="Full name" value="${esc(sv.n || "")}" autocomplete="name" aria-label="Full name">
+    <input id="sid" maxlength="20" placeholder="Student ID" value="${esc(sv.id || "")}" autocomplete="off" aria-label="Student ID">
+    <div class="err" id="err"></div><button class="go" id="en">Enter</button></div>
+    <button class="lnk" id="hw">How to play?</button> &nbsp; <button class="lnk" id="lbv">View leaderboard</button>
+    <p class="sub" style="margin-top:18px">${QUESTIONS.length} questions · ${modeNote()}</p></div>`;
+  const val = id => document.getElementById(id).value.trim();
+  const pinOf = () => val("pin").replace(/\s+/g, "").toUpperCase();
+  const err = m => (document.getElementById("err").textContent = m);
   document.getElementById("hw").onclick = how;
+  document.getElementById("lbv").onclick = () => (pinOf() ? showBoard(pinOf()) : err("Enter the Game PIN first."));
   document.getElementById("en").onclick = () => {
-    st = { n: document.getElementById("nm").value.trim() || "Player", i: 0, sc: 0, sk: 0, res: [] };
+    if (!pinOf()) return err("Enter the Game PIN from your instructor.");
+    if (val("nm").split(/\s+/).filter(Boolean).length < 2) return err("Enter your full name (first and last).");
+    if (!/^[A-Za-z0-9-]{3,20}$/.test(val("sid"))) return err("Enter your Student ID (letters/numbers only).");
+    st = { n: val("nm"), id: val("sid"), pin: pinOf(), i: 0, sc: 0, sk: 0, ok: 0, time: 0, res: [],
+      att: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) };
+    try { localStorage.setItem("lc_player", JSON.stringify({ n: st.n, id: st.id, pin: st.pin })); } catch (e) { /* optional */ }
+    LB.post(rec(false)); // appears on the leaderboard right away
     countdown(3, ask);
   };
+}
+
+function showBoard(pin) {
+  clearInterval(tm); clearInterval(bt);
+  app.innerHTML = `<div class="c" style="max-width:640px"><h1 class="logo">Leaderboard</h1>
+    <p class="sub">Game PIN ${esc(pin)} · updates every few seconds</p>
+    <div id="lbbox" class="card">Loading…</div><button class="lnk" id="bk">Back</button>
+    <p class="sub">${modeNote()}</p></div>`;
+  const load = async () => {
+    const l = await LB.list(pin), b = document.getElementById("lbbox");
+    if (b) b.innerHTML = rowsHTML(l, 20, st && st.id);
+  };
+  document.getElementById("bk").onclick = home;
+  load(); bt = setInterval(load, window.CONFIG.POLL_MS || 5000);
 }
 
 function countdown(n, next) {
@@ -204,28 +247,31 @@ function renderOrder(q) {
   startTimer(limit, () => grade(true));
 }
 
-/* ---------- question type: written answer (self-assessed) ---------- */
+/* ---------- question type: written answer (auto-graded, spelling tolerant) ---------- */
 function renderOpen(q) {
-  clearInterval(tm);
-  app.innerHTML = head(false) + qbox(q) +
-    '<textarea id="ta" placeholder="Type your answer here..." aria-label="Your answer"></textarea>' +
-    '<button class="go" id="sb" style="background:#1368ce;box-shadow:0 4px 0 #0a3d7a">Check my answer</button>';
-  document.getElementById("sb").onclick = () => {
-    const v = document.getElementById("ta").value;
-    app.innerHTML = head(false) + qbox(q) +
-      `<div class="rev"><b>Your answer</b><br>${esc(v) || "(blank)"}</div>` +
-      `<div class="rev" style="background:#26890c"><b>Model answer</b><br>${esc(q.m)}</div>` +
-      '<p class="hint">How did you do?</p><div class="ans">' +
-      '<button class="a" style="background:#26890c" id="s1"><b>■</b><span>Nailed it</span></button>' +
-      '<button class="a" style="background:#d89e00" id="s2"><b>●</b><span>Partly</span></button>' +
-      '<button class="a" style="background:#e21b3c" id="s3"><b>▲</b><span>Not yet</span></button></div>';
-    st.t0 = Date.now();
-    [["s1", 1], ["s2", .5], ["s3", 0]].forEach(([id, f]) =>
-      (document.getElementById(id).onclick = () => finish(f, 1, esc(q.m), false, true)));
+  const limit = 180;
+  app.innerHTML = head(true) + qbox(q) +
+    '<p class="hint">Write a full sentence. The game checks your key ideas, and small spelling mistakes are forgiven.</p>' +
+    '<textarea id="ta" placeholder="Type your answer here..." aria-label="Your answer"></textarea>' + checkBtn(true);
+  const grade = timeout => {
+    const v = document.getElementById("ta").value, r = Grader.grade(q, v);
+    const pts = q.k.map((c, i) => `<div class="ln">${r.hits[i] ? "✔" : "✖"} ${esc(c.l)}</div>`).join("");
+    const detail = `<b>Key ideas (you needed ${q.need})</b><br>${pts}` +
+      (r.short ? "<div class=\"ln\">Your answer was too short. Write a full sentence next time.</div>" : "") +
+      `<div class="ln"><b>Your answer</b><br>${esc(v) || "(blank)"}</div><div class="ln"><b>Model answer</b><br>${esc(q.m)}</div>`;
+    finish(r.f, limit, detail, timeout, true);
   };
+  document.getElementById("ck").onclick = () => grade(false);
+  startTimer(limit, () => grade(true));
 }
 
-/* ---------- scoring + feedback overlay ---------- */
+/* ---------- scoring + feedback overlay (with live top 3) ---------- */
+const miniHTML = l => {
+  const me = l.findIndex(x => x.id === st.id) + 1;
+  return "<b>Leaderboard</b><br>" + l.slice(0, 3).map((x, i) => `${MEDAL[i]} ${esc(x.name)} · ${x.score}`).join("<br>") +
+    `<br><br>You: #${me || "-"} of ${l.length}`;
+};
+
 function finish(f, limit, detail, timeout, noTimeBonus) {
   if (st.done) return;
   st.done = true;
@@ -236,7 +282,7 @@ function finish(f, limit, detail, timeout, noTimeBonus) {
   let pts = Math.round(1000 * f * (noTimeBonus ? 1 : 1 - 0.5 * el / limit));
   st.sk = good ? st.sk + 1 : 0;
   const bonus = good && st.sk > 1 ? Math.min(st.sk - 1, 5) * 100 : 0;
-  pts += bonus; st.sc += pts;
+  pts += bonus; st.sc += pts; st.time += el; if (good) st.ok++;
   st.res.push({ q: q.q, f, d: detail });
   beep(good ? 800 : 220, .3);
 
@@ -248,27 +294,38 @@ function finish(f, limit, detail, timeout, noTimeBonus) {
     (st.sk > 1 ? `<div class="pts">🔥 Streak ${st.sk}${bonus ? " · +" + bonus + " bonus" : ""}</div>` : "") +
     `<div>Score: ${st.sc}</div>` +
     (good && q.t === "mc" ? "" : `<div class="ca"><b>${good ? "Well done" : "Learn from it"}</b><br><br>${detail}</div>`) +
+    '<div class="ca" id="mini" style="min-width:220px">Loading leaderboard…</div>' +
     `<button class="nx" id="nx">${st.i + 1 < QUESTIONS.length ? "Next" : "See results"}</button></div>`;
   document.body.appendChild(d);
+  LB.post(rec(false)).then(l => { const m = d.querySelector("#mini"); if (m) m.innerHTML = miniHTML(l); });
   d.querySelector("#nx").onclick = () => { d.remove(); st.i++; st.i < QUESTIONS.length ? ask() : end(); };
 }
 
-/* ---------- results + podium ---------- */
-function end() {
+/* ---------- final results: real podium + class leaderboard ---------- */
+async function end() {
   window.scrollTo(0, 0);
-  const max = QUESTIONS.length * 1000;
-  const bots = [["Geo Fence", .82], ["Thermal Ninja", .66], ["Payload Pro", .5]]
-    .map(b => [b[0], Math.round(max * b[1] * (0.9 + Math.random() * 0.2))]);
-  const all = bots.concat([[st.n, st.sc, 1]]).sort((a, b) => b[1] - a[1]);
-  const rank = all.findIndex(x => x[2]) + 1, top = [all[1], all[0], all[2]], heights = [150, 200, 110];
-  const missed = st.res.filter(r => r.f < 1), ok = st.res.length - missed.length;
-  app.innerHTML = `<div class="c" style="max-width:600px"><h1 class="logo">${rank === 1 ? "🏆 You win!" : "Great job!"}</h1>
-    <p class="sub">${esc(st.n)}, you finished #${rank} with ${st.sc} points · ${ok} of ${QUESTIONS.length} fully correct</p>
-    <div class="pod">${top.map((x, i) => `<div class="${x[2] ? "me" : ""}" style="height:${heights[i]}px"><span style="font-size:22px">${["🥈", "🥇", "🥉"][i]}</span>${esc(x[0])}<br>${x[1]}</div>`).join("")}</div>` +
+  const missed = st.res.filter(r => r.f < 1);
+  app.innerHTML = `<div class="c" style="max-width:640px"><h1 class="logo">Final results</h1>
+    <p class="sub">${esc(st.n)} · ${st.sc} pts · ${st.ok} of ${QUESTIONS.length} fully correct · time ${fmtTime(st.time)}</p>
+    <div id="podbox"></div><div id="lbbox" class="card">Saving your score…</div>
+    <p class="sub" id="note"></p>` +
     (missed.length ? "<h3>Review these</h3>" + missed.map(r => `<div class="rev"><b>${esc(r.q).slice(0, 140)}</b><br><br>${r.d}</div>`).join("") : "<h3>Perfect run! Nothing to review.</h3>") +
     '<button class="nx" id="again">Play again</button></div>';
   document.getElementById("again").onclick = home;
+  const paint = l => {
+    const box = document.getElementById("lbbox");
+    if (!box) return clearInterval(bt);
+    const me = l.findIndex(x => x.id === st.id) + 1, heights = [200, 150, 110], order = [1, 0, 2];
+    document.getElementById("podbox").innerHTML = '<div class="pod">' + order.filter(p => l[p]).map(p =>
+      `<div class="${l[p].id === st.id ? "me" : ""}" style="height:${heights[p]}px"><span style="font-size:22px">${MEDAL[p]}</span>${esc(l[p].name)}<br>${l[p].score}<br><small>${fmtTime(l[p].time)}</small></div>`).join("") + "</div>";
+    box.innerHTML = rowsHTML(l, 10, st.id) + (me > 10 ? `<p>Your rank: #${me} of ${l.length}</p>` : "");
+    document.getElementById("note").textContent = `You are #${me || "-"} of ${l.length} · ${modeNote()} · updates live`;
+  };
+  paint(await LB.post(rec(true)));
+  clearInterval(bt);
+  bt = setInterval(async () => paint(await LB.list(st.pin)), window.CONFIG.POLL_MS || 5000);
   for (let i = 0; i < 4; i++) setTimeout(() => beep(500 + i * 150, .2), i * 180);
 }
 
-home();
+const boardPin = new URLSearchParams(location.search).get("board");
+boardPin ? showBoard(boardPin.toUpperCase()) : home();
