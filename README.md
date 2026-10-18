@@ -45,4 +45,6 @@ Graded automatically in `js/grading.js`: each question lists key ideas with many
 | `gap` | `q`, `s` (sentence with `{0}`, `{1}`...), `g` (per gap: `[correct, ...wrong]`), optional `eq` |
 | `match` | `q`, `p` (pairs `[term, definition]`) |
 | `order` | `q`, `o` (items in the correct order) |
-| `open` | `q`, `m` (model answer), `k` (key ideas), `need`, optional `must` |
+| `open` | `q`, `m` (model answer), `k` (key ideas), `need`, optional `must`; for "list 3" questions add `list:1`, `minw:1`, `h` (hint) |
+
+True/False questions are `mc` with options `["True","False"]`, `fixed:1` (no shuffle) and an optional `x` explanation.

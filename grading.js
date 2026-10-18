@@ -28,10 +28,11 @@ const Grader = (() => {
   }
   function grade(q, text) {
     const words = norm(text).split(" ").filter(Boolean);
-    const hits = q.k.map(c => words.length >= 3 && c.r.every(group => group.some(p => has(words, p))));
+    const mw = q.minw ?? 3;
+    const hits = q.k.map(c => words.length >= mw && c.r.every(group => group.some(p => has(words, p))));
     let f = Math.min(1, hits.filter(Boolean).length / q.need);
     if (q.must != null && !hits[q.must]) f = Math.min(f, 0.5);
-    return { f, hits, short: words.length < 3 };
+    return { f, hits, short: words.length < mw };
   }
   return { grade };
 })();

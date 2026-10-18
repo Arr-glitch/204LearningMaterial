@@ -135,12 +135,13 @@ function ask() {
 
 /* ---------- question type: multiple choice ---------- */
 function renderMC(q) {
-  const limit = 30, right = q.o[q.a], opts = shuffle(q.o);
+  const limit = 30, right = q.o[q.a], opts = q.fixed ? q.o : shuffle(q.o);
+  const why = "<b>" + esc(right) + "</b>" + (q.x ? "<br><br>" + esc(q.x) : "");
   app.innerHTML = head(true) + qbox(q) + '<div class="ans">' +
     opts.map((x, i) => `<button class="a" style="background:${COLORS[i]}" data-i="${i}"><b>${SHAPES[i]}</b><span>${esc(x)}</span></button>`).join("") + "</div>";
   app.querySelectorAll(".a").forEach(b => (b.onclick = () =>
-    finish(opts[b.dataset.i] === right ? 1 : 0, limit, "<b>" + esc(right) + "</b>")));
-  startTimer(limit, () => finish(0, limit, "<b>" + esc(right) + "</b>", true));
+    finish(opts[b.dataset.i] === right ? 1 : 0, limit, why)));
+  startTimer(limit, () => finish(0, limit, why, true));
 }
 
 /* ---------- question type: drop-down gaps ---------- */
@@ -251,12 +252,15 @@ function renderOrder(q) {
 function renderOpen(q) {
   const limit = 180;
   app.innerHTML = head(true) + qbox(q) +
-    '<p class="hint">Write a full sentence. The game checks your key ideas, and small spelling mistakes are forgiven.</p>' +
+    '<p class="hint">' + esc(q.h || "Write a full sentence. The game checks your key ideas, and small spelling mistakes are forgiven.") + '</p>' +
     '<textarea id="ta" placeholder="Type your answer here..." aria-label="Your answer"></textarea>' + checkBtn(true);
   const grade = timeout => {
     const v = document.getElementById("ta").value, r = Grader.grade(q, v);
-    const pts = q.k.map((c, i) => `<div class="ln">${r.hits[i] ? "✔" : "✖"} ${esc(c.l)}</div>`).join("");
-    const detail = `<b>Key ideas (you needed ${q.need})</b><br>${pts}` +
+    const pts = q.list
+      ? q.k.map((c, i) => (r.hits[i] ? `<div class="ln">✔ ${esc(c.l)}</div>` : "")).join("") +
+        `<div class="ln">Other accepted answers: ${q.k.filter((c, i) => !r.hits[i]).map(c => esc(c.l)).join(", ")}</div>`
+      : q.k.map((c, i) => `<div class="ln">${r.hits[i] ? "✔" : "✖"} ${esc(c.l)}</div>`).join("");
+    const detail = `<b>${q.list ? "Correct items found" : "Key ideas"} (you needed ${q.need})</b><br>${pts}` +
       (r.short ? "<div class=\"ln\">Your answer was too short. Write a full sentence next time.</div>" : "") +
       `<div class="ln"><b>Your answer</b><br>${esc(v) || "(blank)"}</div><div class="ln"><b>Model answer</b><br>${esc(q.m)}</div>`;
     finish(r.f, limit, detail, timeout, true);
